@@ -1,0 +1,63 @@
+# ============================================
+# Prometheus Configuration
+# ============================================
+# Metrics collection for AI-Agentic Architecture
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'ai-agentic-demo'
+
+# Alerting (placeholder for future)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Scrape Configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Traefik metrics
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['traefik:8080']
+    metrics_path: /metrics
+
+  # Agent Runtime
+  - job_name: 'agent-runtime'
+    static_configs:
+      - targets: ['agent-runtime:8001']
+    metrics_path: /metrics
+
+  # LLM Gateway (KEY DIFFERENTIATOR)
+  - job_name: 'llm-gateway'
+    static_configs:
+      - targets: ['llm-gateway:8002']
+    metrics_path: /metrics
+
+  # Tool Registry
+  - job_name: 'tool-registry'
+    static_configs:
+      - targets: ['tool-registry:8003']
+    metrics_path: /metrics
+
+  # Clarification Engine (KEY DIFFERENTIATOR)
+  - job_name: 'clarification-engine'
+    static_configs:
+      - targets: ['clarification-engine:8004']
+    metrics_path: /metrics
+
+  # PostgreSQL exporter (optional - add if needed)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+
+  # Redis exporter (optional - add if needed)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']

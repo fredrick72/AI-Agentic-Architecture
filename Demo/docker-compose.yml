@@ -1,0 +1,244 @@
+version: '3.8'
+
+networks:
+  agent-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+services:
+  # ============================================
+  # API GATEWAY
+  # ============================================
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.addEntryPointsLabels=true"
+      - "--metrics.prometheus.addServicesLabels=true"
+    ports:
+      - "80:80"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik:/etc/traefik
+    networks:
+      - agent-net
+    restart: unless-stopped
+
+  # ============================================
+  # ORCHESTRATION LAYER
+  # ============================================
+  agent-runtime:
+    build:
+      context: ./services/agent-runtime
+      dockerfile: Dockerfile
+    container_name: agent-runtime
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_GATEWAY_URL=http://llm-gateway:8002
+      - TOOL_REGISTRY_URL=http://tool-registry:8003
+      - CLARIFICATION_ENGINE_URL=http://clarification-engine:8004
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=agent_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=demo_password
+      - REDIS_URL=redis://redis:6379
+      - PROMETHEUS_ENABLED=true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.agent.rule=PathPrefix(`/api/agent`)"
+      - "traefik.http.services.agent.loadbalancer.server.port=8001"
+    networks:
+      - agent-net
+    depends_on:
+      - postgres
+      - redis
+      - llm-gateway
+      - tool-registry
+      - clarification-engine
+    restart: unless-stopped
+
+  llm-gateway:
+    build:
+      context: ./services/llm-gateway
+      dockerfile: Dockerfile
+    container_name: llm-gateway
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - CACHE_TTL_SECONDS=300
+      - PROMETHEUS_ENABLED=true
+      - GPT4_TURBO_INPUT_COST=0.01
+      - GPT4_TURBO_OUTPUT_COST=0.03
+      - GPT35_TURBO_INPUT_COST=0.0005
+      - GPT35_TURBO_OUTPUT_COST=0.0015
+    ports:
+      - "8002:8002"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.llm.rule=PathPrefix(`/api/llm`)"
+      - "traefik.http.services.llm.loadbalancer.server.port=8002"
+    networks:
+      - agent-net
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  clarification-engine:
+    build:
+      context: ./services/clarification-engine
+      dockerfile: Dockerfile
+    container_name: clarification-engine
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=agent_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=demo_password
+      - LLM_GATEWAY_URL=http://llm-gateway:8002
+    ports:
+      - "8004:8004"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.clarification.rule=PathPrefix(`/api/clarify`)"
+      - "traefik.http.services.clarification.loadbalancer.server.port=8004"
+    networks:
+      - agent-net
+    depends_on:
+      - postgres
+      - llm-gateway
+    restart: unless-stopped
+
+  tool-registry:
+    build:
+      context: ./services/tool-registry
+      dockerfile: Dockerfile
+    container_name: tool-registry
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=agent_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=demo_password
+    ports:
+      - "8003:8003"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tools.rule=PathPrefix(`/api/tools`)"
+      - "traefik.http.services.tools.loadbalancer.server.port=8003"
+    networks:
+      - agent-net
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # ============================================
+  # DATA LAYER
+  # ============================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: demo_password
+      POSTGRES_DB: agent_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./config/postgres/seed-data.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================
+  # OBSERVABILITY LAYER
+  # ============================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - agent-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    ports:
+      - "3000:3000"
+    networks:
+      - agent-net
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ============================================
+  # FRONTEND
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    environment:
+      - VITE_API_URL=http://localhost
+    ports:
+      - "5173:5173"
+    networks:
+      - agent-net
+    restart: unless-stopped
+    stdin_open: true
+    tty: true

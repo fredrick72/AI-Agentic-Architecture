@@ -1,0 +1,50 @@
+# ============================================
+# Traefik v3 Configuration
+# ============================================
+# API Gateway for AI-Agentic Architecture Demo
+
+# API and Dashboard
+api:
+  dashboard: true
+  insecure: true  # For demo only - disable in production
+
+# Entry Points
+entryPoints:
+  web:
+    address: ":80"
+
+# Providers
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: agent-net
+
+# Logging
+log:
+  level: INFO
+  format: json
+
+# Access Logs
+accessLog:
+  format: json
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: keep
+
+# Metrics
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    addRoutersLabels: true
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+
+# Health Check
+ping:
+  entryPoint: web
