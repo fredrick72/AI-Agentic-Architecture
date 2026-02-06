@@ -806,7 +806,6 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> ReceiveRequest
-    
     ReceiveRequest --> IntentAnalysis
     
     state IntentAnalysis {
@@ -825,27 +824,26 @@ stateDiagram-v2
     
     state GenerateClarification {
         [*] --> IdentifyAmbiguity
-        IdentifyAmbiguity --> MultipleInterpretations: Multiple valid paths
-        IdentifyAmbiguity --> MissingParameters: Incomplete info
-        IdentifyAmbiguity --> ConflictingConstraints: Business rules violated
-        IdentifyAmbiguity --> OutOfScope: Not in capability set
+        
+        state IdentifyAmbiguity <<choice>>
+        IdentifyAmbiguity --> MultipleInterpretations: Multiple paths
+        IdentifyAmbiguity --> MissingParameters: Incomplete
+        IdentifyAmbiguity --> ConflictingConstraints: Rules violated
+        IdentifyAmbiguity --> OutOfScope: Not capable
         
         MultipleInterpretations --> BuildOptions
         MissingParameters --> BuildOptions
         ConflictingConstraints --> BuildGuardrails
         OutOfScope --> BuildGuardrails
         
-        BuildOptions --> FormatUI: Radio/Checkbox
-        BuildGuardrails --> FormatUI: Guided path
-        
+        BuildOptions --> FormatUI
+        BuildGuardrails --> FormatUI
         FormatUI --> [*]
     }
     
     GenerateClarification --> PresentToUser
-    
     PresentToUser --> AwaitUserInput
     AwaitUserInput --> UserResponds
-    
     UserResponds --> UpdateContext
     UpdateContext --> IntentAnalysis: Re-analyze
     
@@ -854,49 +852,43 @@ stateDiagram-v2
         InvokeTool --> ValidateResult
         
         state ValidateResult <<choice>>
-        ValidateResult --> Success: Valid data
+        ValidateResult --> Success: Valid
         ValidateResult --> PartialSuccess: Some results
-        ValidateResult --> NoResults: Empty set
+        ValidateResult --> NoResults: Empty
         ValidateResult --> ConstraintViolation: Rule broken
     }
     
     Success --> FormatResponse
+    FormatResponse --> PersistContext
+    PersistContext --> [*]
     
-    state PartialSuccess {
-        [*] --> GenerateRefinementOptions
-        GenerateRefinementOptions --> SuggestAlternatives: "Did you mean...?"
-        SuggestAlternatives --> PresentOptions
+    PartialSuccess --> RefineOptions
+    state RefineOptions {
+        [*] --> GenerateRefinements
+        GenerateRefinements --> SuggestAlternatives
+        SuggestAlternatives --> [*]
     }
-    
-    PartialSuccess --> PresentOptions
-    PresentOptions --> AwaitUserRefinement
+    RefineOptions --> AwaitUserRefinement
     AwaitUserRefinement --> UpdateContext
     
-    state NoResults {
-        [*] --> SearchAlternatives
-        SearchAlternatives --> RelaxConstraints: Broaden search
-        SearchAlternatives --> SuggestSimilar: "No exact match, but..."
-        
-        RelaxConstraints --> PresentAlternatives
-        SuggestSimilar --> PresentAlternatives
+    NoResults --> SearchAlternatives
+    state SearchAlternatives {
+        [*] --> RelaxConstraints
+        RelaxConstraints --> SuggestSimilar
+        SuggestSimilar --> [*]
     }
-    
-    NoResults --> PresentAlternatives
-    PresentAlternatives --> UserChoosesPath
+    SearchAlternatives --> UserChoosesPath
     UserChoosesPath --> UpdateContext
     
-    state ConstraintViolation {
+    ConstraintViolation --> NegotiateConstraints
+    state NegotiateConstraints {
         [*] --> ExplainLimitation
-        ExplainLimitation --> ShowValidPaths: Display guardrails
-        ShowValidPaths --> OfferGuidedMode: "I can help with..."
+        ExplainLimitation --> ShowValidPaths
+        ShowValidPaths --> OfferGuidedMode
+        OfferGuidedMode --> [*]
     }
-    
-    ConstraintViolation --> OfferGuidedMode
-    OfferGuidedMode --> UserAccepts
+    NegotiateConstraints --> UserAccepts
     UserAccepts --> UpdateContext
-    
-    FormatResponse --> PersistContext
-    PersistContext --> [*]: Conversation continues
     
     note right of GenerateClarification
         NEVER throw errors
@@ -904,8 +896,8 @@ stateDiagram-v2
     end note
     
     note right of ExecuteAction
-        Result quality assessed
-        by LLM, not just HTTP codes
+        Quality assessed by LLM
+        not just HTTP codes
     end note
 ```
 # Implementation: The Clarification System
