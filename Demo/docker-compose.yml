@@ -14,26 +14,28 @@ services:
   # ============================================
   # API GATEWAY
   # ============================================
-  traefik:
-    image: traefik:v3.0
-    container_name: traefik
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--metrics.prometheus=true"
-      - "--metrics.prometheus.addEntryPointsLabels=true"
-      - "--metrics.prometheus.addServicesLabels=true"
-    ports:
-      - "80:80"
-      - "8080:8080"  # Traefik dashboard
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./config/traefik:/etc/traefik
-    networks:
-      - agent-net
-    restart: unless-stopped
+  # NOTE: Traefik disabled on Windows due to Docker socket issues
+  # Services are accessible directly on their ports
+  # traefik:
+  #   image: traefik:v3.0
+  #   container_name: traefik
+  #   command:
+  #     - "--api.insecure=true"
+  #     - "--providers.docker=true"
+  #     - "--providers.docker.exposedbydefault=false"
+  #     - "--entrypoints.web.address=:80"
+  #     - "--metrics.prometheus=true"
+  #     - "--metrics.prometheus.addEntryPointsLabels=true"
+  #     - "--metrics.prometheus.addServicesLabels=true"
+  #   ports:
+  #     - "80:80"
+  #     - "8080:8080"  # Traefik dashboard
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #     - ./config/traefik:/etc/traefik
+  #   networks:
+  #     - agent-net
+  #   restart: unless-stopped
 
   # ============================================
   # ORCHESTRATION LAYER
