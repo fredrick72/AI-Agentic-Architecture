@@ -14,7 +14,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Main conversations table
 CREATE TABLE conversations (
     conversation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255),  -- Optional for demo purposes
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     state VARCHAR(50) NOT NULL DEFAULT 'active',
@@ -30,7 +30,7 @@ CREATE TABLE conversation_turns (
     turn_number INT NOT NULL,
     user_input TEXT NOT NULL,
     agent_response TEXT,
-    intent_analysis JSONB,
+    intent_data JSONB,
     -- Stores: {"intent": "...", "entities": {...}, "confidence": 0.95}
     tool_calls JSONB,
     -- Stores: [{"tool": "query_patients", "params": {...}, "result": {...}}]
@@ -41,6 +41,7 @@ CREATE TABLE conversation_turns (
     cache_hit BOOLEAN DEFAULT false,
     clarification_needed BOOLEAN DEFAULT false,
     clarification_response JSONB,
+    clarification_schema JSONB,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     execution_time_ms INT,
     CONSTRAINT unique_turn UNIQUE (conversation_id, turn_number)

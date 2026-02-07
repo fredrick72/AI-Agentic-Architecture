@@ -7,7 +7,12 @@
       "Bash(\"c:\\\\Users\\\\Eric Fredericksen\\\\source\\\\repos\\\\AI-Agentic-Architecture\\\\Demo\\\\frontend\\\\.gitignore\" << 'EOF'\n# Logs\nlogs\n*.log\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\npnpm-debug.log*\nlerna-debug.log*\n\nnode_modules\ndist\ndist-ssr\n*.local\n\n# Editor directories and files\n.vscode/*\n!.vscode/extensions.json\n.idea\n.DS_Store\n*.suo\n*.ntvs*\n*.njsproj\n*.sln\n*.sw?\nEOF)",
       "Bash(\"c:\\\\Users\\\\Eric Fredericksen\\\\source\\\\repos\\\\AI-Agentic-Architecture\\\\Demo\\\\frontend\\\\.eslintrc.cjs\" << 'EOF'\nmodule.exports = {\n  root: true,\n  env: { browser: true, es2020: true },\n  extends: [\n    'eslint:recommended',\n    'plugin:@typescript-eslint/recommended',\n    'plugin:react-hooks/recommended',\n  ],\n  ignorePatterns: ['dist', '.eslintrc.cjs'],\n  parser: '@typescript-eslint/parser',\n  plugins: ['react-refresh'],\n  rules: {\n    'react-refresh/only-export-components': [\n      'warn',\n      { allowConstantExport: true },\n    ],\n    '@typescript-eslint/no-explicit-any': 'off',\n  },\n}\nEOF)",
       "Bash(echo:*)",
-      "Bash(\"c:\\\\Users\\\\Eric Fredericksen\\\\source\\\\repos\\\\AI-Agentic-Architecture\\\\Demo\\\\services\\\\agent-runtime\\\\requirements.txt\" << 'EOF'\nfastapi==0.109.0\nuvicorn[standard]==0.27.0\npydantic==2.5.3\npydantic-settings==2.1.0\npsycopg2-binary==2.9.9\nrequests==2.31.0\nprometheus-client==0.19.0\nEOF)"
+      "Bash(\"c:\\\\Users\\\\Eric Fredericksen\\\\source\\\\repos\\\\AI-Agentic-Architecture\\\\Demo\\\\services\\\\agent-runtime\\\\requirements.txt\" << 'EOF'\nfastapi==0.109.0\nuvicorn[standard]==0.27.0\npydantic==2.5.3\npydantic-settings==2.1.0\npsycopg2-binary==2.9.9\nrequests==2.31.0\nprometheus-client==0.19.0\nEOF)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
