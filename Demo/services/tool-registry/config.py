@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     postgres_user: str = "postgres"
     postgres_password: str = "demo_password"
 
+    # LLM Gateway (for embedding generation)
+    llm_gateway_url: str = "http://llm-gateway:8002"
+
     # Observability
     prometheus_enabled: bool = True
     log_level: str = "INFO"

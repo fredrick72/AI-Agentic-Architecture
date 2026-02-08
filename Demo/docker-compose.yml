@@ -134,6 +134,7 @@ services:
       - POSTGRES_DB=agent_db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=demo_password
+      - LLM_GATEWAY_URL=http://llm-gateway:8002
     ports:
       - "8003:8003"
     labels:
@@ -144,6 +145,7 @@ services:
       - agent-net
     depends_on:
       - postgres
+      - llm-gateway
     restart: unless-stopped
 
   # ============================================
@@ -160,6 +162,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./config/postgres/seed-data.sql:/docker-entrypoint-initdb.d/02-seed.sql
+      - ./config/postgres/seed-knowledge.sql:/docker-entrypoint-initdb.d/03-seed-knowledge.sql
     ports:
       - "5432:5432"
     networks:

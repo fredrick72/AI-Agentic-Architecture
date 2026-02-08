@@ -463,9 +463,15 @@ Available Tools:
 3. calculate_total(claim_ids: List[str]) - Calculate total amount from claim IDs
    Returns: Total amount and breakdown
 
+4. search_knowledge(query: str, limit: int, category: str) - Search knowledge base for relevant information
+   Returns: List of relevant documents with title, content, category, and similarity scores
+   Categories: policy, procedure, diagnosis_code, claims_process
+
 Instructions:
 - Break down complex queries into tool calls
 - Use patient_id (not name) for get_claims
+- Use search_knowledge when the user asks about policies, procedures, diagnosis codes, medical terminology, or coverage rules
+- When citing knowledge base results, mention the source document title
 - If you need to call a tool, respond with: TOOL_CALL: tool_name(param1="value1", param2="value2")
 - You can make multiple TOOL_CALL in one response
 - After receiving tool results, provide a clear answer to the user
@@ -481,6 +487,13 @@ You: TOOL_CALL: get_claims(patient_id="PAT-12345")
 You: TOOL_CALL: calculate_total(claim_ids=["CLM-12345-001", "CLM-12345-002"])
 [After receiving total]
 You: John Smith has 2 claims totaling $1,250.50.
+
+Example:
+User: "What does diagnosis code S83.5 mean?"
+You: Let me look that up in the knowledge base.
+TOOL_CALL: search_knowledge(query="diagnosis code S83.5")
+[After receiving knowledge results]
+You: Diagnosis code S83.5 refers to a sprain of the cruciate ligament of the knee...
 """
 
         # Build conversation context

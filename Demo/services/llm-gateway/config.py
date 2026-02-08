@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     complexity_threshold_high: float = 0.7  # Use GPT-4 if complexity > 0.7
     complexity_threshold_medium: float = 0.3  # Use GPT-3.5 if complexity > 0.3
 
+    # Embedding Configuration
+    embedding_model: str = "text-embedding-ada-002"
+    embedding_cost_per_1k_tokens: float = 0.0001
+
     # Request Configuration
     max_tokens: int = 4000
     temperature: float = 0.7

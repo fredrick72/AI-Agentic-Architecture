@@ -19,7 +19,10 @@ from tools import (
     get_claims,
     get_claim_by_id,
     calculate_total,
-    calculate_total_by_patient
+    calculate_total_by_patient,
+    search_knowledge,
+    add_document,
+    generate_missing_embeddings,
 )
 
 # Configure logging
@@ -130,6 +133,16 @@ TOOL_DEFINITIONS = {
             "claim_ids": {"type": "array", "required": True, "description": "List of claim IDs"}
         },
         "returns": "Total amount and breakdown by claim"
+    },
+    "search_knowledge": {
+        "name": "search_knowledge",
+        "description": "Search knowledge base for relevant information using semantic similarity (RAG). Use for policies, procedures, diagnosis codes, medical terminology, or coverage rules.",
+        "parameters": {
+            "query": {"type": "string", "required": True, "description": "Natural language search query"},
+            "limit": {"type": "integer", "required": False, "default": 5, "description": "Max results to return"},
+            "category": {"type": "string", "required": False, "description": "Filter by category (policy, procedure, diagnosis_code, claims_process)"}
+        },
+        "returns": "List of relevant documents with title, content, category, and similarity scores"
     }
 }
 
@@ -189,6 +202,8 @@ async def execute_tool(request: ToolExecutionRequest):
             result = get_claims(**request.parameters)
         elif tool_name == "calculate_total":
             result = calculate_total(**request.parameters)
+        elif tool_name == "search_knowledge":
+            result = search_knowledge(**request.parameters)
         else:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -314,6 +329,79 @@ async def api_patient_total(
         )
 
 
+# ============================================
+# Knowledge Management Endpoints (Admin)
+# ============================================
+
+class AddDocumentRequest(BaseModel):
+    """Request for adding a knowledge base document"""
+    title: str = Field(..., description="Document title")
+    content: str = Field(..., description="Document content")
+    category: str = Field("general", description="Category (policy, procedure, diagnosis_code, claims_process)")
+    tags: Optional[List[str]] = Field(None, description="Tags for filtering")
+
+
+@app.post("/knowledge/add")
+async def api_add_document(request: AddDocumentRequest):
+    """Add a document to the knowledge base with auto-generated embedding"""
+    try:
+        result = add_document(
+            title=request.title,
+            content=request.content,
+            category=request.category,
+            tags=request.tags
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.post("/knowledge/embed-all")
+async def api_embed_all():
+    """Generate embeddings for all documents missing them"""
+    try:
+        result = generate_missing_embeddings()
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/knowledge/stats")
+async def api_knowledge_stats():
+    """Get knowledge base statistics"""
+    try:
+        total = db.execute_query(
+            "SELECT COUNT(*) as count FROM knowledge_base",
+            fetch_one=True
+        )
+        embedded = db.execute_query(
+            "SELECT COUNT(*) as count FROM knowledge_base WHERE embedding IS NOT NULL",
+            fetch_one=True
+        )
+        categories = db.execute_query(
+            "SELECT metadata->>'category' as category, COUNT(*) as count "
+            "FROM knowledge_base GROUP BY metadata->>'category' ORDER BY count DESC"
+        )
+
+        return {
+            "total_documents": total["count"],
+            "embedded_documents": embedded["count"],
+            "pending_embedding": total["count"] - embedded["count"],
+            "categories": {row["category"]: row["count"] for row in categories}
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
 @app.get("/metrics")
 async def metrics():
     """Prometheus metrics endpoint"""
@@ -334,6 +422,7 @@ async def startup_event():
     logger.info("Tool Registry Starting...")
     logger.info("=" * 50)
     logger.info(f"Database: {settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}")
+    logger.info(f"LLM Gateway: {settings.llm_gateway_url}")
     logger.info(f"Available tools: {list(TOOL_DEFINITIONS.keys())}")
     logger.info("=" * 50)
 
@@ -345,11 +434,21 @@ async def startup_event():
         try:
             patient_count = db.execute_query("SELECT COUNT(*) as count FROM patients", fetch_one=True)
             claim_count = db.execute_query("SELECT COUNT(*) as count FROM claims", fetch_one=True)
+            kb_count = db.execute_query("SELECT COUNT(*) as count FROM knowledge_base", fetch_one=True)
 
             logger.info(f"✓ {patient_count['count']} patients available")
             logger.info(f"✓ {claim_count['count']} claims available")
+            logger.info(f"✓ {kb_count['count']} knowledge base documents")
         except Exception as e:
             logger.warning(f"Could not count data: {e}")
+
+        # Generate embeddings for any seed data missing them
+        try:
+            result = generate_missing_embeddings()
+            if result["processed"] > 0:
+                logger.info(f"✓ Generated embeddings for {result['processed']} documents")
+        except Exception as e:
+            logger.warning(f"Could not generate embeddings on startup: {e}")
     else:
         logger.error("❌ Database connection failed")
 

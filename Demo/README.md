@@ -15,7 +15,13 @@ A complete containerized demonstration of AI-Agentic Architecture showcasing the
 - **Conversational**: Agent asks follow-up questions naturally
 - **No Dead Ends**: System always offers paths forward
 
-### 3. **Iterative Reasoning** - Multi-Step Tool Execution
+### 3. **RAG Knowledge Base** - Semantic Search with pgvector
+- **Vector Embeddings**: Documents embedded via OpenAI ada-002 (1536 dimensions)
+- **Semantic Search**: Agent retrieves relevant knowledge using cosine similarity
+- **Tool-Based**: RAG is an explicit tool call (`search_knowledge`), visible in the reasoning chain
+- **Auto-Embedding**: Seed documents embedded on startup; new docs embedded on insert
+
+### 4. **Iterative Reasoning** - Multi-Step Tool Execution
 - Agent decomposes complex queries into tool chains
 - Adaptive execution based on context
 - Full reasoning trace visible in observability stack
@@ -164,7 +170,42 @@ docker compose logs -f agent-runtime | grep "Tool call"
 
 ---
 
-### Scenario 4: LLM Gateway - Caching (⭐ Cost Optimization)
+### Scenario 4: Knowledge Base Search (⭐ RAG)
+
+```bash
+curl -X POST http://localhost:8001/query \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What does diagnosis code S83.5 mean?"}'
+```
+
+**Reasoning Chain**:
+1. LLM recognizes this is a knowledge question
+2. Calls `search_knowledge(query="diagnosis code S83.5")` → Finds matching ICD-10 document
+3. Synthesizes answer citing the source document
+
+**Expected**: Agent explains S83.5 is a sprain of the cruciate ligament (ACL/PCL) of the knee, with treatment options and related claim types.
+
+**More RAG queries to try**:
+```bash
+# Policy question
+curl -X POST http://localhost:8001/query \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Does my insurance cover cosmetic teeth whitening?"}'
+
+# Multi-step with RAG: combines patient lookup + knowledge search
+curl -X POST http://localhost:8001/query \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is John Williams being treated for and what does his diagnosis mean?"}'
+```
+
+**Knowledge Base Stats**:
+```bash
+curl http://localhost:8003/knowledge/stats
+```
+
+---
+
+### Scenario 5: LLM Gateway - Caching (⭐ Cost Optimization)
 
 ```bash
 # First request - Cache miss
@@ -189,7 +230,7 @@ curl http://localhost:8002/metrics | grep cache_hit
 
 ---
 
-### Scenario 5: Model Selection (⭐ Intelligent Routing)
+### Scenario 6: Model Selection (⭐ Intelligent Routing)
 
 ```bash
 # Simple query - Uses GPT-3.5 Turbo (cheaper)
@@ -231,9 +272,10 @@ curl -X POST http://localhost/api/llm/complete \
 curl http://localhost:9090
 
 # Key metrics:
-# - llm_requests_total{model, cache_hit}
-# - llm_tokens_total{model, type}
-# - llm_cost_usd_total{model}
+# - llm_requests_total{model, cache_hit}       (includes embedding requests)
+# - llm_tokens_total{model, type}              (includes embedding tokens)
+# - llm_cost_usd_total{model}                  (includes embedding costs)
+# - tool_executions_total{tool_name, status}   (includes search_knowledge)
 # - agent_reasoning_iterations
 # - clarification_rate
 ```
@@ -254,27 +296,40 @@ docker compose logs -f clarification-engine
 
 ```
 ┌─────────────┐
-│   Traefik   │ ← API Gateway (port 80, dashboard 8080)
+│  Frontend   │ ← React UI (port 5173)
 └──────┬──────┘
        │
-   ┌───┴────────────────────┬─────────────────┐
-   │                        │                 │
-┌──▼──────────┐  ┌─────────▼────────┐  ┌────▼─────────┐
-│Agent Runtime│  │   LLM Gateway    │  │Clarification │
-│  (FastAPI)  │  │    (FastAPI)     │  │   Engine     │
-└──┬────┬─────┘  └─────────┬────────┘  └──────┬───────┘
-   │    │                  │                   │
-   │    │         ┌────────┴────────┐     ┌────▼────┐
-   │    │         │  Tool Registry  │     │PostgreSQL│
-   │    │         │    (FastAPI)    │     │+pgvector│
-   │    │         └─────────────────┘     └─────────┘
-   │    │
-┌──▼────▼──┐
-│  Redis   │ ← Prompt cache
-└──────────┘
+┌──────▼──────┐
+│Agent Runtime│ ← Orchestrator (port 8001)
+└──┬──┬──┬────┘
+   │  │  │
+   │  │  └──────────────────────────────────┐
+   │  │                                     │
+   │  ▼                                     ▼
+   │  ┌──────────────────┐  ┌───────────────────────┐
+   │  │   LLM Gateway    │  │  Clarification Engine  │
+   │  │    (port 8002)   │  │     (port 8004)        │
+   │  │ ● Model routing  │  └───────────┬────────────┘
+   │  │ ● Caching        │              │
+   │  │ ● Embeddings     │         ┌────▼────┐
+   │  └────────┬─────────┘         │PostgreSQL│
+   │           │                   │+pgvector │
+   │    ┌──────▼──────┐            └────┬─────┘
+   │    │    Redis     │                │
+   │    │ Prompt cache │           ┌────▼──────────┐
+   │    └─────────────┘            │ knowledge_base │
+   │                               │ (RAG vectors)  │
+   ▼                               └───────────────┘
+┌────────────────┐
+│ Tool Registry  │ ← port 8003
+│ (port 8003)    │
+│ ● query_patients    │
+│ ● get_claims        │
+│ ● calculate_total   │
+│ ● search_knowledge  │ ← RAG tool (calls LLM Gateway for embeddings)
+└────────────────┘
 
-Additional: Prometheus + Grafana (metrics)
-            Frontend (React UI)
+Observability: Prometheus (9090) + Grafana (3000)
 ```
 
 ## 🛠️ Development
@@ -316,6 +371,31 @@ docker compose down -v
 docker compose up -d
 ```
 
+### Knowledge Base Management
+
+```bash
+# Check knowledge base stats
+curl http://localhost:8003/knowledge/stats
+
+# Add a new document (auto-generates embedding)
+curl -X POST http://localhost:8003/knowledge/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Physical Therapy Coverage",
+    "content": "Physical therapy is covered for up to 20 sessions per year...",
+    "category": "policy",
+    "tags": ["physical therapy", "coverage"]
+  }'
+
+# Re-generate embeddings for any documents missing them
+curl -X POST http://localhost:8003/knowledge/embed-all
+
+# Test embedding endpoint directly
+curl -X POST http://localhost:8002/llm/embed \
+  -H "Content-Type: application/json" \
+  -d '{"text": "knee surgery recovery"}'
+```
+
 ### Redis Cache Management
 
 ```bash
@@ -342,9 +422,18 @@ Demo/
 │
 ├── services/
 │   ├── agent-runtime/          # Main orchestrator
-│   ├── llm-gateway/            # LLM routing & caching
+│   │   └── orchestrator.py     #   Reasoning loop + system prompt
+│   ├── llm-gateway/            # LLM routing, caching & embeddings
+│   │   └── main.py             #   /llm/complete + /llm/embed endpoints
 │   ├── clarification-engine/   # Ambiguity handler
-│   └── tool-registry/          # Tool execution
+│   └── tool-registry/          # Tool execution + knowledge management
+│       ├── main.py             #   Tool routing + /knowledge/* admin endpoints
+│       └── tools/
+│           ├── query_patients.py
+│           ├── get_claims.py
+│           ├── calculate_total.py
+│           ├── search_knowledge.py   # RAG: vector similarity search
+│           └── manage_knowledge.py   # Document add + embedding generation
 │
 ├── frontend/                   # React UI
 │
@@ -352,7 +441,10 @@ Demo/
 │   ├── traefik/                # API gateway config
 │   ├── prometheus/             # Metrics collection
 │   ├── grafana/                # Dashboards
-│   └── postgres/               # Database schema + seed data
+│   └── postgres/
+│       ├── init.sql            # Schema (incl. knowledge_base + pgvector)
+│       ├── seed-data.sql       # Patients + claims
+│       └── seed-knowledge.sql  # RAG knowledge documents (15 docs)
 │
 └── scripts/                    # Helper scripts
 ```
@@ -382,25 +474,35 @@ Demo/
 
 "No error. Collaboration."
 
-### Part 3: The Intelligence (3 min)
+### Part 3: Knowledge Retrieval - RAG (3 min)
+"The agent doesn't just query data — it understands domain knowledge."
+
+1. Ask: "What does diagnosis code S83.5 mean?"
+2. Show the reasoning chain: agent calls `search_knowledge` tool
+3. Show knowledge base stats: `curl http://localhost:8003/knowledge/stats`
+4. Ask: "Does my insurance cover cosmetic teeth whitening?"
+5. "Agent found the dental policy and cited it."
+
+### Part 4: The Intelligence (3 min)
 "Look under the hood."
 
 1. Open Grafana: http://localhost:3000
 2. Show:
-   - Model distribution (70% GPT-3.5, 30% GPT-4)
+   - Model distribution (GPT-4 vs GPT-3.5)
    - Cache hit rate climbing
-   - Cost tracking
+   - Cost tracking (including embedding costs)
 
-### Part 4: Multi-Step Reasoning (2 min)
+### Part 5: Multi-Step Reasoning (2 min)
 1. Query: "Total amount for John Smith?"
 2. Show logs: 3 tool calls
 3. "Agent decomposed the query."
 
-### Part 5: The Differentiators (2 min)
-1. **LLM Gateway**: Routing, caching, cost tracking
+### Part 6: The Differentiators (2 min)
+1. **LLM Gateway**: Routing, caching, embeddings, cost tracking
 2. **Clarification Engine**: Errors → Conversations
+3. **RAG**: Domain knowledge retrieval via semantic search
 
-### Part 6: Architecture (1 min)
+### Part 7: Architecture (1 min)
 1. Show docker-compose.yml
 2. "9 microservices, fully containerized"
 3. "Scales to cloud with minimal changes"
@@ -458,13 +560,25 @@ docker compose restart
 # Manually run init scripts
 docker compose exec postgres psql -U postgres -d agent_db -f /docker-entrypoint-initdb.d/01-init.sql
 docker compose exec postgres psql -U postgres -d agent_db -f /docker-entrypoint-initdb.d/02-seed.sql
+docker compose exec postgres psql -U postgres -d agent_db -f /docker-entrypoint-initdb.d/03-seed-knowledge.sql
+```
+
+### Issue: "Knowledge base has no embeddings"
+
+```bash
+# Embeddings are generated on tool-registry startup. Trigger manually:
+curl -X POST http://localhost:8003/knowledge/embed-all
+
+# Verify embeddings exist:
+docker compose exec postgres psql -U postgres -d agent_db \
+  -c "SELECT doc_id, title, (embedding IS NOT NULL) as has_embedding FROM knowledge_base;"
 ```
 
 ## 📚 Next Steps
 
-After mastering the MVP, consider:
+After mastering the current demo, consider:
 
-1. **Add RAG**: Implement pgvector embeddings for knowledge retrieval
+1. ~~**Add RAG**~~: ✅ Implemented — pgvector embeddings with `search_knowledge` tool
 2. **Advanced Clarification**: Parameter elicitation, constraint negotiation
 3. **Jaeger Tracing**: Visual reasoning chains
 4. **Ollama Fallback**: Local LLM as backup
@@ -480,4 +594,4 @@ Feedback and improvements welcome! Open an issue or PR.
 
 ---
 
-**Built with**: FastAPI, PostgreSQL, Redis, React, Traefik, Prometheus, Grafana, OpenAI
+**Built with**: FastAPI, PostgreSQL + pgvector, Redis, React, Traefik, Prometheus, Grafana, OpenAI
