@@ -40,8 +40,8 @@ class CostTracker:
                 COUNT(*) as turn_count,
                 SUM(cost_usd) as total_cost,
                 AVG(cost_usd) as avg_cost_per_turn,
-                SUM(tokens_used->>'input_tokens')::int as total_input_tokens,
-                SUM(tokens_used->>'output_tokens')::int as total_output_tokens
+                SUM((tokens_used->>'input_tokens')::int) as total_input_tokens,
+                SUM((tokens_used->>'output_tokens')::int) as total_output_tokens
             FROM conversation_turns
             WHERE conversation_id = %s
         """
@@ -104,8 +104,8 @@ class CostTracker:
                 COUNT(DISTINCT conversation_id) as conversation_count,
                 SUM(cost_usd) as total_cost,
                 AVG(cost_usd) as avg_cost_per_turn,
-                SUM(tokens_used->>'input_tokens')::int as total_input_tokens,
-                SUM(tokens_used->>'output_tokens')::int as total_output_tokens
+                SUM((tokens_used->>'input_tokens')::int) as total_input_tokens,
+                SUM((tokens_used->>'output_tokens')::int) as total_output_tokens
             FROM conversation_turns
             WHERE 1=1
         """

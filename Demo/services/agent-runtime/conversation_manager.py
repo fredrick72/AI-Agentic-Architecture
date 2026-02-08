@@ -99,6 +99,7 @@ class ConversationManager:
         query = """
             INSERT INTO conversation_turns (
                 conversation_id,
+                turn_number,
                 user_input,
                 agent_response,
                 intent_data,
@@ -108,7 +109,11 @@ class ConversationManager:
                 clarification_needed,
                 clarification_schema,
                 created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (
+                %s,
+                COALESCE((SELECT MAX(turn_number) FROM conversation_turns WHERE conversation_id = %s), 0) + 1,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
             RETURNING turn_id
         """
 
@@ -116,6 +121,7 @@ class ConversationManager:
             query,
             (
                 conversation_id,
+                conversation_id,  # For the turn_number subquery
                 user_input,
                 agent_response,
                 json.dumps(intent_data) if intent_data else None,

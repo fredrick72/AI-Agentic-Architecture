@@ -1,0 +1,9 @@
+# Windows-specific override for Traefik
+# Usage: docker compose -f docker-compose.yml -f docker-compose.windows.yml up
+
+services:
+  traefik:
+    volumes:
+      # Windows Docker Desktop uses named pipe instead of socket
+      - //var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik:/etc/traefik
