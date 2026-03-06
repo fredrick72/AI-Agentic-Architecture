@@ -1,0 +1,100 @@
+name: Athena Release
+
+on:
+  push:
+    tags:
+      - 'athena-v*'   # Trigger on tags like athena-v1.0.0
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  build-and-push:
+    name: Build and push Docker images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # needed to create GitHub release
+      packages: write       # needed to push to GHCR
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#athena-}" >> $GITHUB_OUTPUT
+
+      # ── Schema Service ──────────────────────────────────────────────
+      - name: Build and push schema-service
+        uses: docker/build-push-action@v5
+        with:
+          context: DatabaseIntelligence/services/schema-service
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/athena-schema-service:${{ steps.version.outputs.VERSION }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/athena-schema-service:latest
+
+      # ── Query Agent ─────────────────────────────────────────────────
+      - name: Build and push query-agent
+        uses: docker/build-push-action@v5
+        with:
+          context: DatabaseIntelligence/services/query-agent
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/athena-query-agent:${{ steps.version.outputs.VERSION }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/athena-query-agent:latest
+
+      # ── Frontend ────────────────────────────────────────────────────
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: DatabaseIntelligence/frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/athena-frontend:${{ steps.version.outputs.VERSION }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/athena-frontend:latest
+
+      # ── Package release ZIP ─────────────────────────────────────────
+      - name: Build release package
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          OWNER_LOWER=$(echo "${{ env.OWNER }}" | tr '[:upper:]' '[:lower:]')
+          OUTDIR="athena-${VERSION}"
+          mkdir -p "$OUTDIR"
+
+          # Inject version + registry owner into release compose
+          sed \
+            -e "s|IMAGE_OWNER|${OWNER_LOWER}|g" \
+            -e "s|IMAGE_TAG|${VERSION}|g" \
+            DatabaseIntelligence/docker-compose.release.yml > "$OUTDIR/docker-compose.yml"
+
+          cp DatabaseIntelligence/.env.example "$OUTDIR/.env.example"
+          cp DatabaseIntelligence/release/install.bat "$OUTDIR/install.bat"
+          cp DatabaseIntelligence/release/install.sh  "$OUTDIR/install.sh"
+          cp DatabaseIntelligence/release/INSTALL.md  "$OUTDIR/INSTALL.md"
+
+          zip -r "athena-${VERSION}.zip" "$OUTDIR"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Athena ${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## Athena ${{ steps.version.outputs.VERSION }}
+
+            Database Intelligence Agent — ask questions about any database in plain English.
+
+            ### Installation
+            1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+            2. Download and unzip `athena-${{ steps.version.outputs.VERSION }}.zip`
+            3. Follow `INSTALL.md`
+          files: athena-${{ steps.version.outputs.VERSION }}.zip
+          generate_release_notes: true
