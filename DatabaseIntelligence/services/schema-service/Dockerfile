@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev freetds-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && printf '[global]\ntls version = auto\ntls verify cert = no\n' > /etc/freetds/freetds.conf
+    && printf '[global]\nport = 1433\ntds version = 7.4\nencryption = required\n' > /etc/freetds/freetds.conf
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

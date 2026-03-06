@@ -50,7 +50,10 @@ Athena connects to your database over the network. Use a **read-only database us
 | SQLite       | `sqlite:///absolute/path/to/file.db` |
 | SQL Server   | `mssql+pymssql://user:pass@host:1433/dbname` |
 
-If your database is on the same machine as Athena (running in Docker), use `host.docker.internal` instead of `localhost`.
+**Notes:**
+- If your database is on the same machine as Athena (running in Docker), use `host.docker.internal` instead of `localhost`
+- For Azure SQL Database or other cloud providers, you may need to use a custom port configured for remote access
+- Azure SQL Database requires firewall rules to allow connections—add your IP address in Azure Portal → SQL Server → Networking
 
 ---
 
