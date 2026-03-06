@@ -45,9 +45,18 @@ class SchemaCrawler:
 
     def _get_engine(self) -> sa.Engine:
         if self._engine is None:
+            dialect = self.connection_string.split(":")[0].lower()
+            if "mssql" in dialect:
+                connect_args: dict = {"timeout": 10}
+            elif "mysql" in dialect:
+                connect_args = {"connect_timeout": 10}
+            elif "sqlite" in dialect:
+                connect_args = {}
+            else:  # postgresql
+                connect_args = {"connect_timeout": 10}
             self._engine = sa.create_engine(
                 self.connection_string,
-                connect_args={"connect_timeout": 10},
+                connect_args=connect_args,
                 pool_pre_ping=True,
             )
         return self._engine
@@ -202,14 +211,20 @@ class SchemaCrawler:
             # Quote identifiers to handle reserved words and mixed case
             q_table = self._quote(engine, table)
             q_col = self._quote(engine, column)
-            with engine.connect() as conn:
-                result = conn.execute(
-                    text(
-                        f"SELECT DISTINCT {q_col} FROM {q_table} "
-                        f"WHERE {q_col} IS NOT NULL "
-                        f"LIMIT {self.sample_values_limit}"
-                    )
+            dialect = engine.dialect.name
+            if dialect == "mssql":
+                sql = (
+                    f"SELECT DISTINCT TOP {self.sample_values_limit} {q_col} "
+                    f"FROM {q_table} WHERE {q_col} IS NOT NULL"
                 )
+            else:
+                sql = (
+                    f"SELECT DISTINCT {q_col} FROM {q_table} "
+                    f"WHERE {q_col} IS NOT NULL "
+                    f"LIMIT {self.sample_values_limit}"
+                )
+            with engine.connect() as conn:
+                result = conn.execute(text(sql))
                 return [str(row[0]) for row in result if row[0] is not None]
         except Exception as e:
             logger.debug(f"Could not sample {table}.{column}: {e}")
