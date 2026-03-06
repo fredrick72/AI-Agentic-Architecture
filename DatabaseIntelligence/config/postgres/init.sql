@@ -20,6 +20,7 @@ CREATE TABLE connections (
     table_count INTEGER,
     status VARCHAR(50) DEFAULT 'pending',   -- pending, crawling, ready, error
     error_message TEXT,
+    schema_fingerprint VARCHAR(64),         -- SHA-256 of table/column structure for change detection
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );

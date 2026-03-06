@@ -89,7 +89,7 @@ def detect_db_type(connection_string: str) -> str:
 #  Background crawl task                                               #
 # ------------------------------------------------------------------ #
 
-def run_crawl(connection_id: str, connection_string: str):
+def run_crawl(connection_id: str, connection_string: str, fingerprint: str | None = None):
     """
     Background task: crawl schema, enrich with LLM descriptions, embed and store.
     Updates connection status in the DB throughout.
@@ -130,9 +130,10 @@ def run_crawl(connection_id: str, connection_string: str):
                    SET status='ready',
                        schema_crawled_at=NOW(),
                        table_count=%s,
+                       schema_fingerprint=%s,
                        updated_at=NOW()
                    WHERE id=%s""",
-                (summary.get("table_count", 0), connection_id)
+                (summary.get("table_count", 0), fingerprint, connection_id)
             )
         db.commit()
         logger.info(f"[{connection_id}] Crawl complete: {chunk_count} chunks stored")
@@ -181,8 +182,9 @@ async def register_connection(
     background_tasks: BackgroundTasks
 ):
     """
-    Register a database connection and immediately kick off a background crawl.
-    Returns the connection ID; poll GET /connections/{id} to track progress.
+    Register a database connection and kick off a background crawl.
+    If an existing ready connection with the same connection string and unchanged
+    schema fingerprint is found, returns it immediately (no re-crawl).
     """
     # Test the connection before accepting
     crawler = SchemaCrawler(request.connection_string)
@@ -193,6 +195,41 @@ async def register_connection(
             detail=f"Cannot connect to database: {err}"
         )
 
+    # Compute schema fingerprint (fast — metadata only, no row sampling)
+    try:
+        fingerprint = crawler.compute_fingerprint()
+    except Exception as fp_err:
+        logger.warning(f"Could not compute fingerprint, will re-crawl: {fp_err}")
+        fingerprint = None
+
+    # Check for an existing ready connection with the same string + unchanged schema
+    db = get_db_conn()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT id AS connection_id, name, db_type, table_count, schema_fingerprint
+                   FROM connections
+                   WHERE connection_string = %s
+                     AND status = 'ready'
+                     AND schema_fingerprint IS NOT NULL
+                   ORDER BY schema_crawled_at DESC LIMIT 1""",
+                (request.connection_string,)
+            )
+            existing = cur.fetchone()
+    finally:
+        db.close()
+
+    if existing and fingerprint and existing.get("schema_fingerprint") == fingerprint:
+        logger.info(f"Fingerprint match — reusing connection {existing['connection_id']}")
+        return {
+            "connection_id": existing["connection_id"],
+            "name": existing["name"],
+            "db_type": existing["db_type"],
+            "status": "ready",
+            "message": "Schema unchanged — using cached analysis.",
+        }
+
+    # No match — insert new connection and crawl
     connection_id = str(uuid.uuid4())
     db_type = detect_db_type(request.connection_string)
 
@@ -209,15 +246,14 @@ async def register_connection(
     finally:
         db.close()
 
-    # Kick off crawl in background
-    background_tasks.add_task(run_crawl, connection_id, request.connection_string)
+    background_tasks.add_task(run_crawl, connection_id, request.connection_string, fingerprint)
 
     return {
         "connection_id": connection_id,
         "name": request.name,
         "db_type": db_type,
         "status": "crawling",
-        "message": "Schema crawl started. Poll GET /connections/{id} for status."
+        "message": "Schema crawl started. Poll GET /connections/{id} for status.",
     }
 
 

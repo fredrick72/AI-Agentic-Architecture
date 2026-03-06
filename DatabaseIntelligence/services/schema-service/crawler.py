@@ -73,6 +73,29 @@ class SchemaCrawler:
         except Exception as e:
             return False, str(e)
 
+    def compute_fingerprint(self) -> str:
+        """
+        Compute a SHA-256 fingerprint of the schema structure (table + column names/types).
+        Fast: uses only metadata queries, no row sampling.
+        Used to detect schema changes and skip unnecessary re-crawls.
+        """
+        import hashlib
+        import json
+
+        engine = self._get_engine()
+        inspector = inspect(engine)
+
+        structure = {}
+        for table_name in sorted(inspector.get_table_names()):
+            cols = sorted(
+                (c["name"], str(c["type"]))
+                for c in inspector.get_columns(table_name)
+            )
+            structure[table_name] = cols
+
+        raw = json.dumps(structure, sort_keys=True)
+        return hashlib.sha256(raw.encode()).hexdigest()
+
     def crawl(self) -> dict[str, Any]:
         """
         Full schema crawl. Returns a complete schema map.
