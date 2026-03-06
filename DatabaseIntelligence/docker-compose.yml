@@ -1,0 +1,131 @@
+version: '3.8'
+
+networks:
+  dbintel-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+
+services:
+  # ============================================
+  # SCHEMA INTELLIGENCE SERVICE
+  # Crawls target databases and builds semantic schema maps
+  # ============================================
+  schema-service:
+    build:
+      context: ./services/schema-service
+      dockerfile: Dockerfile
+    container_name: dbintel-schema
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=dbintel
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dbintel_password}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+    ports:
+      - "8010:8010"
+    networks:
+      - dbintel-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ============================================
+  # QUERY AGENT SERVICE
+  # Text-to-SQL agent with guardrails
+  # ============================================
+  query-agent:
+    build:
+      context: ./services/query-agent
+      dockerfile: Dockerfile
+    container_name: dbintel-agent
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SCHEMA_SERVICE_URL=http://schema-service:8010
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=dbintel
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dbintel_password}
+      - REDIS_URL=redis://redis:6379
+      - MAX_RESULT_ROWS=1000
+      - QUERY_TIMEOUT_SECONDS=30
+      - LOG_LEVEL=INFO
+    ports:
+      - "8011:8011"
+    networks:
+      - dbintel-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      schema-service:
+        condition: service_started
+    restart: unless-stopped
+
+  # ============================================
+  # FRONTEND
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dbintel-frontend
+    environment:
+      - VITE_SCHEMA_SERVICE_URL=http://localhost:8010
+      - VITE_QUERY_AGENT_URL=http://localhost:8011
+    ports:
+      - "5174:5174"
+    networks:
+      - dbintel-net
+    depends_on:
+      - query-agent
+    restart: unless-stopped
+
+  # ============================================
+  # DATA LAYER (app metadata + schema chunks)
+  # ============================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: dbintel-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dbintel_password}
+      POSTGRES_DB: dbintel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    ports:
+      - "5433:5432"
+    networks:
+      - dbintel-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: dbintel-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"
+    networks:
+      - dbintel-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
