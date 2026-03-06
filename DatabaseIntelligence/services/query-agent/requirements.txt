@@ -6,7 +6,5 @@ httpx==0.27.0
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
 sqlparse==0.5.0
-
-# DB driver extras (uncomment as needed for your target databases)
-# pymysql==1.1.0          # MySQL
-# pyodbc==5.1.0           # SQL Server
+pymysql==1.1.0
+pymssql==2.3.1

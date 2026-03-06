@@ -48,7 +48,7 @@ Athena connects to your database over the network. Use a **read-only database us
 | PostgreSQL   | `postgresql://user:pass@host:5432/dbname` |
 | MySQL        | `mysql+pymysql://user:pass@host:3306/dbname` |
 | SQLite       | `sqlite:///absolute/path/to/file.db` |
-| SQL Server   | `mssql+pyodbc://user:pass@host/dbname?driver=ODBC+Driver+17+for+SQL+Server` |
+| SQL Server   | `mssql+pymssql://user:pass@host:1433/dbname` |
 
 If your database is on the same machine as Athena (running in Docker), use `host.docker.internal` instead of `localhost`.
 

@@ -6,7 +6,5 @@ sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
 httpx==0.27.0
 pgvector==0.2.5
-
-# DB driver extras (uncomment as needed)
-# pymysql==1.1.0          # MySQL
-# pyodbc==5.1.0           # SQL Server
+pymysql==1.1.0
+pymssql==2.3.1

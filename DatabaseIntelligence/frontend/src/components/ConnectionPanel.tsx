@@ -12,7 +12,7 @@ const DB_EXAMPLES: Record<string, string> = {
   PostgreSQL: 'postgresql://user:password@host:5432/database',
   MySQL: 'mysql+pymysql://user:password@host:3306/database',
   SQLite: 'sqlite:///path/to/database.db',
-  'SQL Server': 'mssql+pyodbc://user:password@host/database?driver=ODBC+Driver+17+for+SQL+Server',
+  'SQL Server': 'mssql+pymssql://user:password@host:1433/database',
 };
 
 export function ConnectionPanel({ onConnected }: Props) {
