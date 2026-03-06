@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Database, LogOut } from 'lucide-react';
+import { AthenaLogo } from './components/AthenaLogo';
 import { ConnectionPanel } from './components/ConnectionPanel';
 import { SchemaExplorer } from './components/SchemaExplorer';
 import { ChatInterface } from './components/ChatInterface';
@@ -29,6 +30,10 @@ export default function App() {
         >
           <Database className="w-4 h-4" />
         </button>
+
+        <AthenaLogo size="sm" />
+
+        <div className="h-5 w-px bg-gray-700" />
 
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-semibold text-white truncate">{connection.name}</h1>
