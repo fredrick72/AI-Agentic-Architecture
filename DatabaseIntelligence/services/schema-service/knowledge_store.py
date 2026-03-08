@@ -187,7 +187,11 @@ class KnowledgeStore:
                 )
                 row = cur.fetchone()
                 if row:
-                    return json.loads(row["raw_schema"])
+                    raw = row["raw_schema"]
+                    # Handle both string and already-parsed dict
+                    if isinstance(raw, str):
+                        return json.loads(raw)
+                    return raw
                 return None
         finally:
             conn.close()

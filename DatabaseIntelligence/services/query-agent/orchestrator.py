@@ -41,13 +41,19 @@ SELECT query to answer the user's question.
 Rules you must follow:
 - Write ONLY the SQL query. No explanation, no markdown fences, no commentary.
 - Only SELECT statements. Never INSERT, UPDATE, DELETE, DROP, or any DDL.
-- Use explicit column names — never SELECT *.
-- Always include a LIMIT clause (default: 100 rows unless the user asks for more).
+- For specific questions, use explicit column names. For exploratory queries like \
+"show me data from X table", SELECT * is acceptable.
+- Always limit results (default: 100 rows unless the user asks for more):
+  * For SQL Server: use TOP N (e.g., SELECT TOP 100 ...)
+  * For PostgreSQL/MySQL/SQLite: use LIMIT N
 - Use table aliases for clarity when joining multiple tables.
 - Prefer INNER JOIN unless the question implies optional relationships.
-- Quote identifiers that might be reserved words or contain spaces.
+- Quote identifiers that might be reserved words or contain spaces (e.g., [TableName] for SQL Server).
+- If the user mentions a table name that's similar but not exact, use the closest matching table from the schema.
 - If the question is ambiguous, choose the most reasonable interpretation.
-- If you cannot answer with the available tables, output exactly: CANNOT_ANSWER
+- Only output CANNOT_ANSWER if truly no relevant tables exist.
+
+Database type: {db_type}
 
 Available schema (retrieved for this specific question):
 {schema_context}
@@ -106,23 +112,32 @@ class QueryOrchestrator:
         try:
             # --- 1. Look up connection ---
             connection_string = self._get_connection_string(connection_id)
+            dialect = self._extract_dialect(connection_string)
 
-            # --- 2. Retrieve relevant schema via RAG ---
+            # --- 2. Retrieve relevant schema via RAG + keyword matching ---
             schema_results = self._retrieve_schema(connection_id, question)
+            # Enhance with exact table name matches if mentioned in question
+            schema_results = self._add_exact_table_matches(connection_id, question, schema_results)
             schema_context = self._format_schema_context(schema_results)
+            logger.debug(f"Schema context length: {len(schema_context)} chars")
 
             # --- 3. Generate SQL ---
             sql_response = self.llm.generate_sql(
-                system_prompt=SQL_SYSTEM_PROMPT.format(schema_context=schema_context),
+                system_prompt=SQL_SYSTEM_PROMPT.format(
+                    db_type=dialect.upper(),
+                    schema_context=schema_context
+                ),
                 user_message=question,
             )
             total_tokens += sql_response["input_tokens"] + sql_response["output_tokens"]
             total_cost += sql_response["cost_usd"]
 
             raw_sql = sql_response["response"].strip()
+            logger.info(f"LLM generated SQL: {raw_sql[:200]}")
 
             # Handle CANNOT_ANSWER signal
             if raw_sql.upper().startswith("CANNOT_ANSWER"):
+                logger.warning(f"LLM returned CANNOT_ANSWER for question: {question}")
                 self._log_audit(
                     audit_id=audit_id,
                     connection_id=connection_id,
@@ -187,7 +202,7 @@ class QueryOrchestrator:
                 }
 
             # --- 5. Add LIMIT if missing ---
-            bounded_sql = self.guardrails.add_limit(raw_sql)
+            bounded_sql = self.guardrails.add_limit(raw_sql, dialect=dialect)
 
             # --- 6. Execute ---
             exec_result = self.executor.execute(connection_string, bounded_sql)
@@ -275,10 +290,23 @@ class QueryOrchestrator:
         finally:
             conn.close()
 
+    def _extract_dialect(self, connection_string: str) -> str:
+        """Extract the database dialect from a SQLAlchemy connection string."""
+        dialect = connection_string.split(":")[0].lower()
+        if "mssql" in dialect:
+            return "mssql"
+        elif "mysql" in dialect:
+            return "mysql"
+        elif "sqlite" in dialect:
+            return "sqlite"
+        else:
+            return "postgresql"
+
     def _retrieve_schema(
         self, connection_id: str, question: str, top_k: int = 6
     ) -> list[dict[str, Any]]:
         """Call the schema service to get relevant table chunks."""
+        logger.info(f"Retrieving schema for question: '{question[:100]}'")
         try:
             with httpx.Client(timeout=15) as client:
                 resp = client.post(
@@ -286,15 +314,93 @@ class QueryOrchestrator:
                     json={"query": question, "top_k": top_k},
                 )
                 resp.raise_for_status()
-                return resp.json().get("results", [])
+                results = resp.json().get("results", [])
+                logger.info(f"Schema service returned {len(results)} results")
+                return results
         except Exception as e:
-            logger.warning(f"Schema retrieval failed: {e}")
+            logger.error(f"Schema retrieval failed: {e}", exc_info=True)
             return []
+
+    def _add_exact_table_matches(
+        self,
+        connection_id: str,
+        question: str,
+        rag_results: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """
+        Augment RAG results with exact table name matches from the question.
+        Helps when users mention specific table names that RAG might miss.
+        """
+        import re
+
+        # Extract potential table names (alphanumeric + dots/underscores)
+        # Look for words that might be table names
+        potential_names = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_.]*\b', question.lower())
+        potential_names = [n for n in potential_names if len(n) > 2]  # Filter short words
+
+        if not potential_names:
+            return rag_results
+
+        # Get already retrieved table names to avoid duplicates
+        retrieved_tables = {r.get("table_name", "").lower() for r in rag_results}
+
+        # Search for exact matches
+        try:
+            with httpx.Client(timeout=10) as client:
+                # Get all table names for this connection
+                resp = client.get(
+                    f"{settings.schema_service_url}/connections/{connection_id}/tables"
+                )
+                resp.raise_for_status()
+                all_tables = resp.json().get("tables", [])
+
+                # Find exact matches (case-insensitive)
+                exact_matches = []
+                for table_name in all_tables:
+                    table_lower = table_name.lower()
+                    # Check if any potential name matches this table
+                    for potential in potential_names:
+                        if potential in table_lower or table_lower in potential:
+                            if table_lower not in retrieved_tables:
+                                # Fetch full schema for this table
+                                try:
+                                    schema_resp = client.get(
+                                        f"{settings.schema_service_url}/connections/{connection_id}/tables/{table_name}"
+                                    )
+                                    schema_resp.raise_for_status()
+                                    table_schema = schema_resp.json()
+                                    exact_matches.append({
+                                        "table_name": table_name,
+                                        "similarity": 1.0,  # Perfect match
+                                        "raw_schema": json.dumps(table_schema),
+                                        "content": table_schema.get("description", "")
+                                    })
+                                    retrieved_tables.add(table_lower)
+                                    logger.info(f"Added exact table match: {table_name}")
+                                except Exception as e:
+                                    logger.debug(f"Could not fetch schema for {table_name}: {e}")
+                            break
+
+                # Prepend exact matches (they have priority)
+                if exact_matches:
+                    return exact_matches + rag_results
+
+        except Exception as e:
+            logger.debug(f"Exact table matching failed: {e}")
+
+        return rag_results
 
     def _format_schema_context(self, schema_results: list[dict[str, Any]]) -> str:
         """Format retrieved schema chunks into a prompt block."""
         if not schema_results:
+            logger.warning("No schema results returned from RAG search")
             return "(No relevant schema found — answer CANNOT_ANSWER)"
+
+        # Log similarity scores for debugging
+        similarities = [r.get("similarity", 0) for r in schema_results]
+        table_names = [r.get("table_name", "unknown") for r in schema_results]
+        logger.info(f"Retrieved {len(schema_results)} tables: {table_names[:3]}... "
+                   f"with similarities: {[f'{s:.3f}' for s in similarities[:3]]}")
 
         blocks = []
         for r in schema_results:

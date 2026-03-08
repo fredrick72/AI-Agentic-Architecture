@@ -108,15 +108,26 @@ class SQLGuardrails:
 
         return True, ""
 
-    def add_limit(self, sql: str) -> str:
+    def add_limit(self, sql: str, dialect: str = "postgresql") -> str:
         """
-        Ensure the query has a LIMIT clause no larger than max_rows.
-        If no LIMIT exists, appends one.
+        Ensure the query has a LIMIT/TOP clause no larger than max_rows.
+        If no LIMIT exists, appends one using dialect-appropriate syntax.
         If an existing LIMIT exceeds max_rows, replaces it.
+
+        Supported dialects:
+        - postgresql, mysql, sqlite: LIMIT syntax
+        - mssql: TOP syntax or OFFSET/FETCH
         """
         sql = sql.rstrip(";").strip()
         sql_upper = sql.upper()
 
+        if dialect == "mssql":
+            return self._add_limit_mssql(sql, sql_upper)
+        else:
+            return self._add_limit_standard(sql, sql_upper)
+
+    def _add_limit_standard(self, sql: str, sql_upper: str) -> str:
+        """Add LIMIT clause for PostgreSQL, MySQL, SQLite."""
         limit_match = re.search(r"\bLIMIT\s+(\d+)\b", sql_upper)
         if limit_match:
             existing = int(limit_match.group(1))
@@ -131,7 +142,39 @@ class SQLGuardrails:
                 )
         else:
             sql = f"{sql}\nLIMIT {self.max_rows}"
+        return sql
 
+    def _add_limit_mssql(self, sql: str, sql_upper: str) -> str:
+        """Add TOP clause for SQL Server."""
+        # Check if TOP already exists
+        top_match = re.search(r"\bSELECT\s+TOP\s+(\d+)\b", sql_upper)
+        if top_match:
+            existing = int(top_match.group(1))
+            if existing > self.max_rows:
+                # Replace existing TOP value
+                sql = re.sub(
+                    r"(\bSELECT\s+)TOP\s+\d+\b",
+                    rf"\1TOP {self.max_rows}",
+                    sql,
+                    flags=re.IGNORECASE,
+                    count=1,
+                )
+            return sql
+
+        # Check if LIMIT exists (incorrect syntax for MSSQL)
+        if re.search(r"\bLIMIT\s+\d+\b", sql_upper):
+            # Remove LIMIT and add TOP
+            sql = re.sub(r"\bLIMIT\s+\d+\b", "", sql, flags=re.IGNORECASE)
+            sql = sql.strip()
+
+        # Add TOP after SELECT
+        sql = re.sub(
+            r"\bSELECT\b",
+            f"SELECT TOP {self.max_rows}",
+            sql,
+            flags=re.IGNORECASE,
+            count=1,
+        )
         return sql
 
     def explain_check(self, sql: str) -> str:

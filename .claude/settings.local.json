@@ -14,7 +14,20 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(wc:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(docker exec dbintel-schema cat /etc/freetds/freetds.conf)",
+      "Bash(docker exec dbintel-schema nc -zv clq-truecost-misql-devqa.public.0568cc4f27a2.database.windows.net 1433)",
+      "Bash(docker exec dbintel-schema sh -c \"cat /etc/freetds/freetds.conf\")",
+      "Bash(docker exec dbintel-schema python3 -c \"import socket; sock = socket.socket\\(\\); sock.settimeout\\(5\\); result = sock.connect_ex\\(\\(''clq-truecost-misql-devqa.public.0568cc4f27a2.database.windows.net'', 1433\\)\\); print\\(''Connection successful'' if result == 0 else f''Connection failed with code {result}''\\); sock.close\\(\\)\")",
+      "Bash(docker exec dbintel-schema python3 -c \"import socket; print\\(socket.gethostbyname\\(''clq-truecost-misql-devqa.public.0568cc4f27a2.database.windows.net''\\)\\)\")",
+      "Bash(git push origin Project-Oracle-Phase1)",
+      "Bash(git push origin v1.0.1)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth login)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" auth status)",
+      "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" release view v1.0.1)",
+      "Bash(docker exec dbintel-postgres psql -U dbintel_user -d dbintel -c \"SELECT connection_id, COUNT\\(*\\) as chunk_count FROM schema_chunks GROUP BY connection_id;\")",
+      "Bash(docker exec dbintel-postgres psql -U postgres -d dbintel -c \"SELECT connection_id, COUNT\\(*\\) as chunk_count, AVG\\(LENGTH\\(content\\)\\) as avg_content_length FROM schema_chunks GROUP BY connection_id;\")",
+      "Bash(docker exec dbintel-postgres psql -U postgres -d dbintel -c \":*)"
     ]
   }
 }
