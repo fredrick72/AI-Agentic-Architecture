@@ -27,7 +27,11 @@
       "Bash(\"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" release view v1.0.1)",
       "Bash(docker exec dbintel-postgres psql -U dbintel_user -d dbintel -c \"SELECT connection_id, COUNT\\(*\\) as chunk_count FROM schema_chunks GROUP BY connection_id;\")",
       "Bash(docker exec dbintel-postgres psql -U postgres -d dbintel -c \"SELECT connection_id, COUNT\\(*\\) as chunk_count, AVG\\(LENGTH\\(content\\)\\) as avg_content_length FROM schema_chunks GROUP BY connection_id;\")",
-      "Bash(docker exec dbintel-postgres psql -U postgres -d dbintel -c \":*)"
+      "Bash(docker exec dbintel-postgres psql -U postgres -d dbintel -c \":*)",
+      "Bash(docker exec dbintel-frontend env)",
+      "Bash(docker exec dbintel-postgres psql -U postgres -d dbintel -c \"\\\\d connections\")",
+      "Bash(docker exec dbintel-postgres psql -U postgres -d dbintel -c \"ALTER TABLE connections ADD COLUMN IF NOT EXISTS schema_fingerprint VARCHAR\\(64\\);\")",
+      "Bash(docker exec dbintel-postgres psql -U postgres -d dbintel -c \"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ''connections'' AND column_name = ''schema_fingerprint'';\")"
     ]
   }
 }

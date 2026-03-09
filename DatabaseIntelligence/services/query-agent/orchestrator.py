@@ -29,7 +29,7 @@ import psycopg2.extras
 from config import settings
 from guardrails import SQLGuardrails
 from db_executor import DBExecutor
-from llm_client import LLMClient
+from llm_client import LLMClient, RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +243,38 @@ class QueryOrchestrator:
                 "row_count": exec_result["row_count"],
                 "truncated": exec_result["truncated"],
                 "execution_time_ms": exec_result["execution_time_ms"],
+                "guardrail_blocked": False,
+                "guardrail_reason": None,
+                "tokens_used": total_tokens,
+                "cost_usd": round(total_cost, 6),
+                "audit_id": audit_id,
+            }
+
+        except RateLimitError as e:
+            logger.warning(f"Rate limit exceeded: {e}")
+            self._log_audit(
+                audit_id=audit_id,
+                connection_id=connection_id,
+                session_id=session_id,
+                question=question,
+                generated_sql=None,
+                guardrail_blocked=False,
+                execution_status="rate_limited",
+                tokens=total_tokens,
+                cost=total_cost,
+            )
+            return {
+                "answer": (
+                    "The OpenAI API rate limit has been exceeded. "
+                    "Please wait a moment and try again. "
+                    "Rate limits typically reset within 60 seconds."
+                ),
+                "sql": None,
+                "columns": [],
+                "rows": [],
+                "row_count": 0,
+                "truncated": False,
+                "execution_time_ms": 0,
                 "guardrail_blocked": False,
                 "guardrail_reason": None,
                 "tokens_used": total_tokens,
