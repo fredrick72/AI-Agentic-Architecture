@@ -170,6 +170,39 @@ class KnowledgeStore:
         finally:
             conn.close()
 
+    def get_all_tables_with_row_counts(self, connection_id: str) -> list[dict[str, Any]]:
+        """Return all table names with their row counts for quick overview."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT table_name, raw_schema
+                    FROM schema_chunks
+                    WHERE connection_id = %s
+                    ORDER BY table_name
+                    """,
+                    (connection_id,)
+                )
+                results = []
+                for row in cur.fetchall():
+                    table_name = row[0]
+                    raw_schema = row[1]
+                    # Parse raw_schema to get row_count
+                    if isinstance(raw_schema, str):
+                        schema_data = json.loads(raw_schema)
+                    else:
+                        schema_data = raw_schema
+
+                    row_count = schema_data.get("row_count", -1)
+                    results.append({
+                        "table_name": table_name,
+                        "row_count": row_count
+                    })
+                return results
+        finally:
+            conn.close()
+
     def get_table_schema(
         self, connection_id: str, table_name: str
     ) -> dict[str, Any] | None:

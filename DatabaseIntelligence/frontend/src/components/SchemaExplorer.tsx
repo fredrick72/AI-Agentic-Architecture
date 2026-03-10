@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, Table2, Key, Link, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronRight, ChevronDown, Table2, Key, Link, Loader2, RefreshCw, DatabaseZap } from 'lucide-react';
 import { listTables, getTableSchema } from '../api/agent';
 import type { Connection, TableSchema, ColumnInfo } from '../types';
 
@@ -33,10 +33,12 @@ function ColumnRow({ col, isPk }: { col: ColumnInfo; isPk: boolean }) {
 function TableRow({
   connectionId,
   tableName,
+  rowCount,
   onTableClick,
 }: {
   connectionId: string;
   tableName: string;
+  rowCount?: number;
   onTableClick?: (t: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -56,6 +58,10 @@ function TableRow({
     }
   }
 
+  // Use rowCount prop if available, otherwise fall back to schema
+  const actualRowCount = rowCount !== undefined ? rowCount : schema?.row_count;
+  const isEmpty = actualRowCount === 0;
+
   return (
     <div className="border-b border-gray-800 last:border-0">
       <button
@@ -67,17 +73,31 @@ function TableRow({
         ) : (
           <ChevronRight className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
         )}
-        <Table2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+        {isEmpty ? (
+          <DatabaseZap className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+        ) : (
+          <Table2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+        )}
         <span
-          className="text-sm text-gray-300 hover:text-white truncate flex-1 cursor-pointer"
+          className={`text-sm truncate flex-1 cursor-pointer transition-colors ${
+            isEmpty
+              ? 'text-amber-500/80 hover:text-amber-400'
+              : 'text-gray-300 hover:text-white'
+          }`}
           onClick={(e) => { e.stopPropagation(); onTableClick?.(tableName); }}
         >
           {tableName}
         </span>
-        {schema && (
-          <span className="text-[10px] text-gray-600 flex-shrink-0">
-            {schema.row_count >= 0 ? schema.row_count.toLocaleString() + ' rows' : ''}
-          </span>
+        {actualRowCount !== undefined && actualRowCount >= 0 && (
+          isEmpty ? (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/30 flex-shrink-0 font-medium">
+              EMPTY
+            </span>
+          ) : (
+            <span className="text-[10px] text-gray-600 flex-shrink-0">
+              {actualRowCount.toLocaleString()} rows
+            </span>
+          )
         )}
       </button>
 
@@ -121,8 +141,13 @@ function TableRow({
   );
 }
 
+interface TableInfo {
+  table_name: string;
+  row_count: number;
+}
+
 export function SchemaExplorer({ connection, onTableClick }: Props) {
-  const [tables, setTables] = useState<string[]>([]);
+  const [tables, setTables] = useState<TableInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -141,7 +166,7 @@ export function SchemaExplorer({ connection, onTableClick }: Props) {
   }
 
   const filtered = tables.filter(t =>
-    t.toLowerCase().includes(search.toLowerCase())
+    t.table_name.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -189,9 +214,10 @@ export function SchemaExplorer({ connection, onTableClick }: Props) {
         ) : (
           filtered.map(table => (
             <TableRow
-              key={table}
+              key={table.table_name}
               connectionId={connection.connection_id}
-              tableName={table}
+              tableName={table.table_name}
+              rowCount={table.row_count}
               onTableClick={onTableClick}
             />
           ))

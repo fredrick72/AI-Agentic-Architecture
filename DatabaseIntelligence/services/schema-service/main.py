@@ -279,10 +279,14 @@ async def get_connection(connection_id: str):
 
 @app.get("/connections/{connection_id}/tables")
 async def list_tables(connection_id: str):
-    """List all tables discovered for this connection."""
+    """List all tables discovered for this connection with row counts."""
     store = KnowledgeStore(settings.postgres_url, settings.openai_api_key)
-    tables = store.get_all_table_names(connection_id)
-    return {"connection_id": connection_id, "tables": tables, "count": len(tables)}
+    tables_with_counts = store.get_all_tables_with_row_counts(connection_id)
+    return {
+        "connection_id": connection_id,
+        "tables": tables_with_counts,
+        "count": len(tables_with_counts)
+    }
 
 
 @app.get("/connections/{connection_id}/tables/{table_name}")
